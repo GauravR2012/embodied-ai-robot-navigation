@@ -73,3 +73,8 @@ BACKEND_HOST = "<IP_of_backend_system>"     # IP of the backend machine
 server_socket.bind(("<IP_of_UI_system>", GRADIO_RECEIVE_PORT))
 ```
 Make sure both systems are on the same local network and can communicate using the specified IPs.
+
+# Citation
+If you use this code or build upon this work, please cite:
+
+[1] Mukund Mitra, Yashaswi Sinha, Arushi Khokhar, Sairam Jinkala, and Pradipta Biswas. 2025. LMD-FISH: Language Model Driven - Framework for Intelligent Scheduling of Heterogenous Systems. In Companion Proceedings of the 30th International Conference on Intelligent User Interfaces (IUI '25 Companion). Association for Computing Machinery, New York, NY, USA, 74–77. https://doi.org/10.1145/3708557.3716333
