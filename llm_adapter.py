@@ -176,6 +176,46 @@ JSON schema:
         return content
 
 
+class RemoteLLMBackend(LLMBackend):
+    """
+    Remote LLM backend.
+
+    The backend communicates with the AI gateway through
+    RemoteLLMClient. It does not know anything about ROS 2,
+    Nav2, GPUs, or the physical robot.
+    """
+
+    def __init__(self, client: Any):
+        self.client = client
+
+    def generate(self, user_text: str) -> str:
+        if not isinstance(user_text, str):
+            raise LLMAdapterError(
+                "User instruction must be a string."
+            )
+
+        if not user_text.strip():
+            raise LLMAdapterError(
+                "User instruction cannot be empty."
+            )
+
+        try:
+            response = self.client.generate(
+                instruction=user_text,
+            )
+        except Exception as exc:
+            raise LLMAdapterError(
+                f"Remote LLM request failed: {exc}"
+            ) from exc
+
+        if not isinstance(response, str) or not response.strip():
+            raise LLMAdapterError(
+                "Remote LLM returned an empty response."
+            )
+
+        return response
+
+
 class LLMCommandAdapter:
     """
     Converts natural-language instructions into validated RobotCommands.
@@ -257,6 +297,7 @@ class LLMCommandAdapter:
 # Pydantic's discriminated union is the source of truth in command_schema.py.
 # We expose its JSON Schema here for Ollama's structured-output interface.
 #
+
 
 def _build_robot_command_schema() -> dict[str, Any]:
     from pydantic import TypeAdapter
