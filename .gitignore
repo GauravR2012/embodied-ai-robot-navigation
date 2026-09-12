@@ -47,3 +47,4 @@ ollama_models/
 # OS
 .DS_Store
 Thumbs.db
+vlm_test_image.png
