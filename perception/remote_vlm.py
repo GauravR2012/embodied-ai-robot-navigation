@@ -53,6 +53,89 @@ class RemoteVLMPerception(PerceptionBackend):
         return self._parse_response(response)
 
     @staticmethod
+    def _clean_json_response(response: str) -> str:
+        """
+        Normalize common VLM JSON formatting before parsing.
+
+        Supported cases include:
+
+            {"objects": [...]}
+
+        and:
+
+            ```json
+            {"objects": [...]}
+            ```
+
+        and responses containing explanatory text surrounding a JSON
+        object.
+
+        This method only prepares the text for JSON parsing. It does
+        not validate the resulting structure.
+        """
+
+        cleaned = response.strip()
+
+        if not cleaned:
+            return cleaned
+
+        # -------------------------------------------------------------
+        # Remove Markdown code fences.
+        # -------------------------------------------------------------
+
+        if cleaned.startswith("```"):
+            lines = cleaned.splitlines()
+
+            # Remove opening fence, e.g. ```json or ```
+            if lines and lines[0].strip().startswith("```"):
+                lines = lines[1:]
+
+            # Remove closing fence.
+            if lines and lines[-1].strip() == "```":
+                lines = lines[:-1]
+
+            cleaned = "\n".join(lines).strip()
+
+        # -------------------------------------------------------------
+        # If the response is already valid JSON, return it directly.
+        # -------------------------------------------------------------
+
+        try:
+            json.loads(cleaned)
+            return cleaned
+        except json.JSONDecodeError:
+            pass
+
+        # -------------------------------------------------------------
+        # Attempt to extract an outer JSON object.
+        #
+        # This handles responses such as:
+        #
+        #   Here is the result:
+        #   {"objects": [...]}
+        #
+        # while still relying on json.loads() for actual validation.
+        # -------------------------------------------------------------
+
+        first_brace = cleaned.find("{")
+        last_brace = cleaned.rfind("}")
+
+        if (
+            first_brace != -1
+            and last_brace != -1
+            and first_brace < last_brace
+        ):
+            candidate = cleaned[first_brace : last_brace + 1]
+
+            try:
+                json.loads(candidate)
+                return candidate
+            except json.JSONDecodeError:
+                pass
+
+        return cleaned
+
+    @staticmethod
     def _parse_response(response: str) -> PerceptionResult:
         """
         Parse the structured VLM perception response.
@@ -76,34 +159,49 @@ class RemoteVLMPerception(PerceptionBackend):
             ]
         }
 
-        The VLM output is untrusted. Invalid JSON falls back to
-        a plain-text scene description. Invalid individual objects
-        are ignored or have invalid optional fields removed.
+        The VLM output is untrusted.
+
+        The parser therefore:
+          - normalizes common Markdown JSON formatting,
+          - validates the top-level JSON structure,
+          - ignores malformed individual objects,
+          - removes invalid optional fields,
+          - discards malformed bounding boxes,
+          - preserves the original response for debugging.
+
+        Invalid or truncated JSON falls back to a plain-text scene
+        description rather than being treated as structured perception.
         """
 
         if not isinstance(response, str):
             response = str(response)
 
-        response = response.strip()
+        raw_response = response.strip()
 
-        if not response:
+        if not raw_response:
             return PerceptionResult(
                 scene_description=None,
-                raw_response=response,
+                raw_response=raw_response,
             )
 
+        response_for_parsing = (
+            RemoteVLMPerception._clean_json_response(
+                raw_response
+            )
+        )
+
         try:
-            data = json.loads(response)
+            data = json.loads(response_for_parsing)
         except json.JSONDecodeError:
             return PerceptionResult(
-                scene_description=response,
-                raw_response=response,
+                scene_description=raw_response,
+                raw_response=raw_response,
             )
 
         if not isinstance(data, dict):
             return PerceptionResult(
-                scene_description=response,
-                raw_response=response,
+                scene_description=raw_response,
+                raw_response=raw_response,
             )
 
         objects: list[DetectedObject] = []
@@ -192,7 +290,7 @@ class RemoteVLMPerception(PerceptionBackend):
         return PerceptionResult(
             objects=tuple(objects),
             scene_description=scene_description,
-            raw_response=response,
+            raw_response=raw_response,
         )
 
     @staticmethod
