@@ -377,6 +377,8 @@ wait "$GZ_PID"
                     "/tf@tf2_msgs/msg/TFMessage@gz.msgs.Pose_V",
 
                     "/camera/image_raw@sensor_msgs/msg/Image@gz.msgs.Image",
+                    
+                    "/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist",
                 ],
                 output="screen",
             )
