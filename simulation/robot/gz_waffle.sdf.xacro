@@ -133,14 +133,14 @@
           </material>
         </visual>
 
-        <sensor name="hls_lfcd_lds" type="ray">
+        <sensor name="hls_lfcd_lds" type="gpu_lidar">
           <always_on>true</always_on>
           <visualize>true</visualize>
           <pose>-0.064 0 0.15 0 0 0</pose>
           <update_rate>5</update_rate>
           <topic>$(arg namespace)/scan</topic>
           <gz_frame_id>base_scan</gz_frame_id>
-          <ray>
+          <lidar>
             <scan>
               <horizontal>
                 <samples>360</samples>
@@ -159,7 +159,7 @@
               <mean>0.0</mean>
               <stddev>0.01</stddev>
             </noise>
-          </ray>
+          </lidar>
         </sensor>
       </link>
 

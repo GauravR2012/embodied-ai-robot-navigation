@@ -51,18 +51,16 @@ def generate_launch_description() -> LaunchDescription:
     # PROJECT PATHS
     # ================================================================
 
-    project_root = Path(__file__).resolve().parents[2]
+    project_root = Path(__file__).resolve().parents[1]
 
     world_file = (
         project_root
-        / "simulation"
         / "worlds"
         / "embodied_ai_boxes.sdf"
     )
 
     robot_sdf_xacro = (
         project_root
-        / "simulation"
         / "robot"
         / "gz_waffle.sdf.xacro"
     )

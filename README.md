@@ -16,35 +16,77 @@ A natural-language instruction is processed by an LLM and converted into a const
 User Instruction
        │
        ▼
-   LLM Adapter
+Gradio Interface
+(text now; voice input planned)
        │
        ▼
-Structured Robot Command
+LLM / VLM Command Understanding
        │
        ▼
-  Command Schema
-    (Pydantic)
+Validated Structured Command
+(Pydantic schema)
        │
        ▼
-   Task Planner
+Task Planner / Skill Decomposition
        │
-       ▼
-Execution Context
-       │
-       ▼
-    Skill List
-       │
-       ▼
- ROS 2 Executor
-       │
-       ▼
-      Nav2
-       │
-       ▼
-     Robot
+       ├──────────────────────────────────────────────┐
+       │                                              │
+       ▼                                              ▼
+Named-Location Resolution                    VLM-Based Object Grounding
+(locations.yaml)                              (planned multimodal path)
+       │                                              │
+       │                                      Object Detection / BBox
+       │                                              │
+       │                                      RGB-D Depth Association
+       │                                              │
+       │                                      3D Object Pose Estimation
+       │                                              │
+       └──────────────────────┬───────────────────────┘
+                              ▼
+                   Target Pose in Robot / Map Frame
+                              │
+                              ▼
+                    ROS 2 Navigation Executor
+                              │
+                              ▼
+                             Nav2
+                              │
+                              ▼
+                         /cmd_vel
+                              │
+                              ▼
+                       Gazebo Robot
+                              ▲
+                              │
+            LiDAR / RGB-D / Odometry / TF Feedback
 ```
 
 The LLM does not directly generate ROS commands, shell commands, Python code, or physical robot coordinates.
+
+The VLM-grounded navigation path is designed as a modular extension: the VLM identifies the requested object, an open-vocabulary grounding module returns a bounding box, RGB-D or depth processing estimates the object's 3D position, and a coordinate-transform layer converts that position into a navigation target for ROS 2/Nav2. The current blue-box demonstration should be interpreted according to the active implementation: deterministic SDF/configuration-based target resolution is implemented, while end-to-end VLM detection and depth-based pose estimation remain planned integration stages unless explicitly enabled in the codebase.
+
+![System architecture with VLM-grounded navigation](docs/images/system-architecture.png)
+
+
+## Visual Documentation
+
+Store the four PNG images and the navigation GIF under `docs/images/`.
+
+| Asset | Path | Purpose |
+|---|---|---|
+| System architecture | `docs/images/system-architecture.png` | Integrated architecture showing LLM/VLM understanding, object grounding, RGB-D pose estimation, target resolution, ROS 2/Nav2, and feedback |
+| Gazebo custom world | `docs/images/gazebo-customworld.png` | Custom Gazebo environment containing the TurtleBot3 robot, obstacles, and colored boxes |
+| RViz navigation | `docs/images/rviz-navigation.png` | RViz map, robot pose, sensor data, obstacles, and navigation state |
+| Future perception pipeline | `docs/images/future-perception-pipeline.png` | Planned VLM/VLA, bounding-box grounding, 6-DoF pose estimation, planning, manipulation, and closed-loop feedback |
+| Blue-box navigation GIF | `docs/images/blue-box-navigation.gif` | Demonstration of the TurtleBot moving toward the blue box |
+
+Create the directory with:
+
+```bash
+mkdir -p docs/images
+```
+
+Copy or rename the assets to match the paths above. The GIF should be a real execution demonstration. The architecture and future-pipeline PNGs describe the intended system and should not be interpreted as proof that every planned component is already implemented.
 
 ---
 
@@ -85,6 +127,30 @@ The architecture is intended to evolve toward:
 - Hardware deployment
 
 These components are future development targets and are not claimed as implemented unless present in the repository.
+
+
+### Current Simulation Evidence
+
+The custom Gazebo world contains multiple colored boxes and a TurtleBot3-based mobile robot.
+
+Tested components include:
+
+- ROS 2 Jazzy and Gazebo simulation
+- RViz visualization
+- TF and odometry streams
+- LiDAR scan publication
+- Nav2 global planning
+- `NavigateToPose` goal submission
+- Manual velocity command testing
+- Natural-language named-location resolution
+
+The box-to-goal test currently reaches Nav2 execution, but the final approach can stall while rotational commands continue. This remains an active debugging item.
+
+![Gazebo custom world](docs/images/gazebo-customworld.png)
+
+![RViz navigation](docs/images/rviz-navigation.png)
+
+![Blue-box navigation demonstration](docs/images/blue-box-navigation.gif)
 
 ---
 
@@ -315,6 +381,20 @@ Object / Target Representation
 ```
 
 This allows perception results to become inputs to downstream skills without tightly coupling the perception system to the task planner.
+
+### Box-to-Nav2 Goal Test
+
+The current validation script reads a selected box pose from the simulation world, computes a candidate standoff pose, and submits it to Nav2.
+
+```bash
+python3 box_to_nav2_goal_test.py \
+  --world-file "simulation/worlds/embodied_ai_boxes.sdf" \
+  --box-name red_box
+```
+
+![Box-to-Nav2 goal test](docs/images/box-to-nav2-goal-test.png)
+
+**Note:** This is currently a deterministic validation tool. It reads the box pose from the SDF file and does not yet perform VLM-based visual grounding.
 
 ### 7. ROS 2 Executor
 
@@ -613,6 +693,41 @@ Command Pipeline
 
 ---
 
+## Gradio and Voice-Command Interface
+
+The Gradio interface is the planned human-facing entry point for the system.
+
+### Current direction
+
+- Text commands are supported as the initial interaction mode.
+- Voice commands will be added through speech-to-text, for example Whisper.
+- The interface should display the interpreted command, detected target, confidence, bounding box, estimated pose, navigation state, and final result.
+- The interface should not bypass command validation or directly publish unrestricted velocity commands.
+- Future multimodal inputs may include an RGB/RGB-D frame, a spoken command, and robot-state feedback.
+
+```text
+Text / Voice Input
+        │
+        ▼
+Speech-to-Text (voice mode)
+        │
+        ▼
+LLM / VLM Command Interpretation
+        │
+        ▼
+Validated Command + Target Reference
+        │
+        ▼
+Perception / Navigation / Manipulation
+        │
+        ▼
+Gradio Status, Visualization, and Result
+```
+
+Voice interaction and VLM-based perception are roadmap items unless their corresponding nodes and integrations are present in the repository.
+
+---
+
 ## LLM Backend
 
 The current LLM adapter supports an Ollama backend.
@@ -735,6 +850,10 @@ This allows:
 
 ### V2 — Multimodal Grounding
 
+This phase converts object references such as “blue box” into perception-derived targets. The expected sequence is object detection/grounding → bounding box → depth association → 3D position or 6-DoF pose → TF transformation → Nav2 goal generation.
+
+### V2 — Multimodal Grounding
+
 - [ ] RGB camera integration
 - [ ] VLM-based object grounding
 - [ ] Open-vocabulary object queries
@@ -763,50 +882,169 @@ This allows:
 
 ---
 
+## VLM-Grounded Object Navigation Architecture
+
+The intended multimodal navigation flow extends the current named-location pipeline so that the robot can respond to commands such as:
+
+> “Go to the blue box.”
+
+The VLM/perception subsystem is responsible for understanding the object reference and grounding it in the camera image. The navigation subsystem remains responsible for transforming the grounded target into a safe, executable robot goal.
+
+```text
+Natural-Language Command
+        │
+        ▼
+Gradio Interface
+(text input; voice input planned)
+        │
+        ▼
+LLM / VLM Instruction Understanding
+        │
+        ├── Intent: navigate
+        └── Target: blue box
+        │
+        ▼
+Open-Vocabulary Object Grounding
+(Grounding DINO / VLM-compatible detector)
+        │
+        ▼
+Bounding Box + Confidence + Class Label
+        │
+        ▼
+RGB-D / Depth Association
+        │
+        ▼
+3D Object Position / Pose Estimation
+        │
+        ▼
+Coordinate Transformation
+(camera frame → base_link → odom/map)
+        │
+        ▼
+Navigation Goal Generation
+(standoff distance, approach direction, yaw)
+        │
+        ▼
+Task Planner
+        │
+        ▼
+ROS 2 NavigateToPose Action
+        │
+        ▼
+Nav2 Global Planner + Controller
+        │
+        ▼
+Gazebo Mobile Robot
+        │
+        └──────── Sensor and action feedback ────────┐
+                                                     ▼
+                                      Re-detection / Replanning
+                                      when target or scene changes
+```
+
+### Perception output contract
+
+The perception layer should expose a detector-agnostic result so that Grounding DINO, a VLM, a segmentation model, or another detector can be exchanged without changing the navigation executor.
+
+```python
+{
+    "label": "blue box",
+    "confidence": 0.93,
+    "bbox_xyxy": [x_min, y_min, x_max, y_max],
+    "depth_m": 2.15,
+    "position_camera": {
+        "x": 0.42,
+        "y": -0.18,
+        "z": 2.15
+    },
+    "position_map": None,
+    "timestamp": 0.0,
+    "frame_id": "camera_depth_optical_frame"
+}
+```
+
+The values above are illustrative schema fields, not measured output from the current simulation. The production implementation should validate confidence, depth availability, coordinate frames, timestamp freshness, and target reachability before sending a navigation goal.
+
+### Current implementation versus target implementation
+
+| Capability | Status |
+|---|---|
+| Natural-language command interface | Implemented foundation |
+| Gradio interface | Present; planned for multimodal and voice upgrades |
+| Text command parsing and validation | Implemented foundation |
+| Named-location resolution through configuration | Implemented |
+| ROS 2 Jazzy and Nav2 navigation | Implemented and tested |
+| Gazebo colored-box environment | Implemented |
+| Blue-box movement demonstration | Demonstrated in simulation GIF |
+| VLM-based object detection | Planned integration |
+| Bounding-box extraction | Planned integration |
+| RGB-D depth association | Planned integration |
+| 3D / 6-DoF object pose estimation | Planned integration |
+| Navigation to dynamically grounded object pose | Planned integration |
+| Voice commands in Gradio | Planned integration |
+| VLA and imitation learning | Longer-term roadmap |
+
+---
+
 ## Target System Architecture
 
-The long-term architecture is:
+The long-term architecture is divided into interface, intelligence, perception, planning, execution, and feedback layers.
 
 ```text
                          USER
                            │
                            ▼
-                    Natural Language
+             Gradio Interface
+          text input + future voice
                            │
                            ▼
-                    LLM / VLM / VLA
+                  LLM / VLM Layer
+           instruction and target intent
                            │
                            ▼
-                  Robot Command Schema
+                 Command Validator
+                 Pydantic schema
                            │
                            ▼
-                    Command Validator
+                   Task Planner
+              skill decomposition
                            │
-                           ▼
-                      Task Planner
-                           │
-                ┌──────────┴──────────┐
-                │                     │
-                ▼                     ▼
-           Perception            Robot State
-                │                     │
-                └──────────┬──────────┘
+          ┌────────────────┴────────────────┐
+          │                                 │
+          ▼                                 ▼
+   Navigation Skills                 Perception Skills
+   named locations                   VLM / detector
+   Nav2 goals                        bbox / segmentation
+          │                          RGB-D / depth
+          │                          3D pose estimation
+          │                                 │
+          │                                 ▼
+          │                       Target pose + confidence
+          │                                 │
+          └────────────────┬────────────────┘
                            ▼
                    Execution Context
+             frames, target, constraints
                            │
                            ▼
-                      Skill Layer
+                    Skill Executor
                            │
+             ┌─────────────┴─────────────┐
+             ▼                           ▼
+          Nav2                    Future Manipulation
+       mobile base                grasp / place / move
+             │                           │
+             └─────────────┬─────────────┘
                            ▼
-                    ROS 2 Executor
+                    Gazebo Simulation
+                           ▲
                            │
-                ┌──────────┴──────────┐
-                ▼                     ▼
-               Nav2              Future Skills
-                │                     │
-                ▼                     ▼
-          Mobile Robot          Manipulation
+          RGB-D / LiDAR / odometry / TF
+                           │
+                           └── closed-loop feedback
 ```
+
+The architecture intentionally keeps perception modular. A detector or VLM should publish a standardized object-grounding result, while navigation and manipulation components consume validated target poses rather than depending on one specific model implementation.
 
 ---
 
@@ -849,6 +1087,35 @@ ROS 2 / Nav2
 ```
 
 The perception layer is intended to remain detector-agnostic so that different object detection, segmentation, VLM, depth, or LiDAR systems can be integrated without redesigning the navigation architecture.
+
+![Future perception and manipulation pipeline](docs/images/future-perception-pipeline.png)
+
+---
+
+
+## Documentation Assets
+
+Recommended repository layout:
+
+```text
+docs/
+└── images/
+    ├── system-architecture.png
+    ├── gazebo-customworld.png
+    ├── rviz-navigation.png
+    ├── future-perception-pipeline.png
+    └── blue-box-navigation.gif
+```
+
+Asset guidance:
+
+- `system-architecture.png`: integrated architecture, including the VLM grounding branch.
+- `gazebo-customworld.png`: actual custom Gazebo world screenshot.
+- `rviz-navigation.png`: actual RViz screenshot.
+- `future-perception-pipeline.png`: planned multimodal perception and manipulation architecture.
+- `blue-box-navigation.gif`: actual TurtleBot movement demonstration toward the blue box.
+
+Do not commit API keys, private machine paths, raw logs containing sensitive information, or credentials in documentation assets.
 
 ---
 

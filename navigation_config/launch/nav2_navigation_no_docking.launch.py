@@ -1,12 +1,10 @@
-
 import os
 
 from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, GroupAction, SetEnvironmentVariable
-from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, PythonExpression
+from launch.substitutions import LaunchConfiguration
 
 from launch_ros.actions import Node, SetParameter
 from nav2_common.launch import RewrittenYaml
@@ -23,8 +21,6 @@ def generate_launch_description():
     use_respawn = LaunchConfiguration("use_respawn")
     log_level = LaunchConfiguration("log_level")
 
-    # Nav2 lifecycle nodes.
-    # Docking server is intentionally excluded.
     lifecycle_nodes = [
         "controller_server",
         "smoother_server",
@@ -42,7 +38,6 @@ def generate_launch_description():
         ("/tf_static", "tf_static"),
     ]
 
-    # Rewrite parameters using launch arguments.
     param_substitutions = {
         "autostart": autostart,
     }
@@ -107,7 +102,11 @@ def generate_launch_description():
                 use_sim_time,
             ),
 
-            # Controller server
+            # ==========================================================
+            # Controller Server
+            # Publishes: /cmd_vel_nav
+            # Message type: geometry_msgs/msg/Twist
+            # ==========================================================
             Node(
                 package="nav2_controller",
                 executable="controller_server",
@@ -126,7 +125,9 @@ def generate_launch_description():
                 ],
             ),
 
-            # Smoother server
+            # ==========================================================
+            # Smoother Server
+            # ==========================================================
             Node(
                 package="nav2_smoother",
                 executable="smoother_server",
@@ -143,7 +144,9 @@ def generate_launch_description():
                 remappings=remappings,
             ),
 
-            # Planner server
+            # ==========================================================
+            # Planner Server
+            # ==========================================================
             Node(
                 package="nav2_planner",
                 executable="planner_server",
@@ -160,7 +163,9 @@ def generate_launch_description():
                 remappings=remappings,
             ),
 
-            # Route server
+            # ==========================================================
+            # Route Server
+            # ==========================================================
             Node(
                 package="nav2_route",
                 executable="route_server",
@@ -177,7 +182,11 @@ def generate_launch_description():
                 remappings=remappings,
             ),
 
-            # Behavior server
+            # ==========================================================
+            # Behavior Server
+            # Publishes: /cmd_vel_nav
+            # Message type: geometry_msgs/msg/Twist
+            # ==========================================================
             Node(
                 package="nav2_behaviors",
                 executable="behavior_server",
@@ -196,7 +205,9 @@ def generate_launch_description():
                 ],
             ),
 
-            # Behavior Tree navigator
+            # ==========================================================
+            # Behavior Tree Navigator
+            # ==========================================================
             Node(
                 package="nav2_bt_navigator",
                 executable="bt_navigator",
@@ -213,7 +224,9 @@ def generate_launch_description():
                 remappings=remappings,
             ),
 
-            # Waypoint follower
+            # ==========================================================
+            # Waypoint Follower
+            # ==========================================================
             Node(
                 package="nav2_waypoint_follower",
                 executable="waypoint_follower",
@@ -230,7 +243,11 @@ def generate_launch_description():
                 remappings=remappings,
             ),
 
-            # Velocity smoother
+            # ==========================================================
+            # Velocity Smoother
+            # Input:  /cmd_vel_nav
+            # Output: /cmd_vel_smoothed
+            # ==========================================================
             Node(
                 package="nav2_velocity_smoother",
                 executable="velocity_smoother",
@@ -249,7 +266,14 @@ def generate_launch_description():
                 ],
             ),
 
-            # Collision monitor
+            # ==========================================================
+            # Collision Monitor
+            #
+            # Input:  /cmd_vel_smoothed
+            # Output: /cmd_vel
+            #
+            # The topics are configured in nav2_params.yaml.
+            # ==========================================================
             Node(
                 package="nav2_collision_monitor",
                 executable="collision_monitor",
@@ -266,7 +290,9 @@ def generate_launch_description():
                 remappings=remappings,
             ),
 
-            # Lifecycle manager
+            # ==========================================================
+            # Lifecycle Manager
+            # ==========================================================
             Node(
                 package="nav2_lifecycle_manager",
                 executable="lifecycle_manager",
