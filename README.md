@@ -12,6 +12,10 @@ The system separates high-level intelligence from deterministic robot execution.
 
 A natural-language instruction is processed by an LLM and converted into a constrained structured command. The command is then validated, decomposed into executable skills, resolved against the robot's environment configuration, and executed through ROS 2 and Nav2.
 
+![Blue-box navigation demonstration](docs/images/blue-box-navigation.gif)
+**Natural Language Command → “Go to the blue box” → Autonomous Robot Navigation in Gazebo**
+
+
 ```text
 User Instruction
        │
