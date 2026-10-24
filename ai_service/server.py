@@ -1,6 +1,10 @@
+import base64
+import io
 import torch
-from fastapi import FastAPI, HTTPException
+import traceback
 
+from PIL import Image
+from fastapi import FastAPI, HTTPException
 from .llm_engine import LLMEngine
 from .schemas import (
     ChatRequest,
@@ -99,7 +103,7 @@ def chat(request: ChatRequest):
 
         return ChatResponse(
             response=response,
-            model="Qwen/Qwen2.5-3B-Instruct",
+            model="qwen3:8b",
         )
 
     except Exception as exc:
@@ -109,19 +113,27 @@ def chat(request: ChatRequest):
             detail=str(exc),
         ) from exc
 
-
-@app.post(
-    "/v1/perception",
-    response_model=PerceptionResponse,
-)
-def perception(
-    request: PerceptionRequest,
-):
-
+@app.post("/v1/perception", response_model=PerceptionResponse)
+def perception(request: PerceptionRequest):
     try:
+        # ------------------------------------------------------------
+        # Decode base64 image received from the ROS2 client
+        # ------------------------------------------------------------
+
+        image_bytes = base64.b64decode(
+            request.image_base64
+        )
+
+        image = Image.open(
+            io.BytesIO(image_bytes)
+        ).convert("RGB")
+
+        # ------------------------------------------------------------
+        # Run VLM
+        # ------------------------------------------------------------
 
         response = vlm_engine.analyze(
-            image_base64=request.image_base64,
+            image=image,
             instruction=request.instruction,
         )
 
@@ -131,6 +143,11 @@ def perception(
         )
 
     except Exception as exc:
+        print("\n" + "=" * 70)
+        print("VLM PERCEPTION ERROR")
+        print("=" * 70)
+        traceback.print_exc()
+        print("=" * 70 + "\n")
 
         raise HTTPException(
             status_code=500,

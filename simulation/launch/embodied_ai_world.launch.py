@@ -376,6 +376,10 @@ wait "$GZ_PID"
 
                     "/camera/image_raw@sensor_msgs/msg/Image@gz.msgs.Image",
                     
+                    "/world/embodied_ai_boxes/model/turtlebot3_waffle/link/camera_link/sensor/intel_realsense_r200_depth/depth_image@sensor_msgs/msg/Image@gz.msgs.Image",
+
+                    "/world/embodied_ai_boxes/model/turtlebot3_waffle/link/camera_link/sensor/intel_realsense_r200_depth/camera_info@sensor_msgs/msg/CameraInfo@gz.msgs.CameraInfo",
+                    
                     "/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist",
                 ],
                 output="screen",

@@ -4,10 +4,13 @@ from typing import Any
 
 import torch
 from PIL import Image
-from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
+from transformers import (
+    AutoProcessor,
+    Qwen2_5_VLForConditionalGeneration,
+)
 
 
-MODEL_ID = "Qwen/Qwen2.5-VL-7B-Instruct"
+MODEL_ID = "/workspace/models/Qwen2.5-VL-7B-Instruct"
 
 
 PERCEPTION_SYSTEM_INSTRUCTION = """
@@ -62,30 +65,65 @@ class VLMEngine:
         model_id: str = MODEL_ID,
     ) -> None:
         self.model_id = model_id
+        self.device = (
+            "cuda"
+            if torch.cuda.is_available()
+            else "cpu"
+        )
 
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.processor = None
+        self.model = None
+        self.load_time: float | None = None
+
+    def load(self) -> None:
+        """Load the processor and VLM model."""
+
+        if self.loaded:
+            return
+
+        import time
+
+        print(f"Loading VLM: {self.model_id}")
+
+        start = time.perf_counter()
 
         self.processor = AutoProcessor.from_pretrained(
-            model_id,
+            self.model_id,
         )
 
         if self.device == "cuda":
             self.model = (
                 Qwen2_5_VLForConditionalGeneration.from_pretrained(
-                    model_id,
-                    torch_dtype=torch.float16,
+                    self.model_id,
+                    torch_dtype=torch.bfloat16,
                     device_map="auto",
                 )
             )
         else:
             self.model = (
                 Qwen2_5_VLForConditionalGeneration.from_pretrained(
-                    model_id,
+                    self.model_id,
                     torch_dtype=torch.float32,
                 ).to(self.device)
             )
 
         self.model.eval()
+
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+
+        self.load_time = time.perf_counter() - start
+
+        print(
+            f"VLM loaded in {self.load_time:.2f} s"
+        )
+
+    @property
+    def loaded(self) -> bool:
+        return (
+            self.model is not None
+            and self.processor is not None
+        )
 
     def analyze(
         self,
@@ -100,17 +138,30 @@ class VLMEngine:
         layer on the client side.
         """
 
-        if image is None:
-            raise ValueError("image must not be None")
+        if not self.loaded:
+            raise RuntimeError(
+                "VLM is not loaded."
+            )
 
-        if not isinstance(image, Image.Image):
-            raise TypeError("image must be a PIL.Image.Image")
+        if image is None:
+            raise ValueError(
+                "image must not be None"
+            )
+
+        if not isinstance(
+            image,
+            Image.Image,
+        ):
+            raise TypeError(
+                "image must be a PIL.Image.Image"
+            )
 
         instruction = instruction.strip()
 
         prompt = (
             f"{PERCEPTION_SYSTEM_INSTRUCTION}\n\n"
-            f"Additional perception instruction:\n{instruction}"
+            f"Additional perception instruction:\n"
+            f"{instruction}"
         )
 
         messages: list[dict[str, Any]] = [
@@ -156,7 +207,9 @@ class VLMEngine:
                 do_sample=False,
             )
 
-        input_token_count = inputs["input_ids"].shape[1]
+        input_token_count = (
+            inputs["input_ids"].shape[1]
+        )
 
         generated_ids_trimmed = [
             output_ids[input_token_count:]
