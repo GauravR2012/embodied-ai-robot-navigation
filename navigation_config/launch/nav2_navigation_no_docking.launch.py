@@ -307,6 +307,12 @@ def generate_launch_description():
                     {
                         "autostart": autostart,
                         "node_names": lifecycle_nodes,
+                        # Heartbeat ("bond") timeout in seconds. The default (4 s) is
+                        # missed on a loaded machine, and the manager then shuts the
+                        # whole Nav2 stack down ("SERVER collision_monitor IS DOWN").
+                        # 0.0 disables the heartbeat check (simulation only). Use
+                        # e.g. 20.0 instead to keep a long-timeout safety net.
+                        "bond_timeout": 0.0,
                     }
                 ],
             ),

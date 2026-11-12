@@ -34,9 +34,16 @@ def generate_launch_description() -> LaunchDescription:
     4. Wait until the TurtleBot exists in Gazebo.
     5. Start the Gazebo <-> ROS bridge.
     6. Publish the ROS robot TF tree from the official TurtleBot URDF.
-    7. Start SLAM Toolbox.
-    8. Start Nav2.
-    9. Start RViz.
+    7. Start SLAM Toolbox          (only with start_slam:=true)
+    8. Start the stock Nav2        (only with start_nav2:=true)
+    9. Start RViz                  (use_rviz, default true)
+
+    SLAM and Nav2 are OFF by default. This project runs them in their own
+    terminals (slam_toolbox, and navigation_config/navigation_launch.py with
+    the project's nav2_params.yaml). Starting them here as well would run a
+    second SLAM and a second Nav2 stack at the same time: duplicate
+    /navigate_to_pose and /spin servers, conflicting map->odom TF, and goals
+    that get aborted.
 
     Gazebo uses the project's SDF/Xacro.
 
@@ -166,6 +173,25 @@ def generate_launch_description() -> LaunchDescription:
         "use_rviz",
         default_value="true",
         description="Start RViz.",
+    )
+
+    start_slam = DeclareLaunchArgument(
+        "start_slam",
+        default_value="false",
+        description=(
+            "Also start slam_toolbox from this launch file. Leave false if "
+            "you start SLAM in its own terminal."
+        ),
+    )
+
+    start_nav2 = DeclareLaunchArgument(
+        "start_nav2",
+        default_value="false",
+        description=(
+            "Also start the stock nav2_bringup navigation from this launch "
+            "file. Leave false if you start the project's Nav2 "
+            "(navigation_config) in its own terminal."
+        ),
     )
 
     # ================================================================
@@ -402,6 +428,9 @@ wait "$GZ_PID"
                         / "online_async_launch.py"
                     )
                 ),
+                condition=IfCondition(
+                    LaunchConfiguration("start_slam")
+                ),
                 launch_arguments={
                     "use_sim_time": "true",
                 }.items(),
@@ -426,6 +455,9 @@ wait "$GZ_PID"
                         / "launch"
                         / "navigation_launch.py"
                     )
+                ),
+                condition=IfCondition(
+                    LaunchConfiguration("start_nav2")
                 ),
                 launch_arguments={
                     "use_sim_time": "true",
@@ -467,6 +499,8 @@ wait "$GZ_PID"
     return LaunchDescription(
         [
             use_rviz,
+            start_slam,
+            start_nav2,
 
             gazebo_resource_path,
 

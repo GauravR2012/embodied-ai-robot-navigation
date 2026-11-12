@@ -25,11 +25,31 @@ class StrictModel(BaseModel):
 # ---------------------------------------------------------------------------
 
 class NamedLocationTarget(StrictModel):
+    """A symbolic place whose pose comes from config/locations.yaml."""
+
     type: Literal["named_location"]
     value: str = Field(min_length=1, max_length=100)
 
 
-Target = NamedLocationTarget
+class ObjectTarget(StrictModel):
+    """
+    A physical object described in words ("red box").
+
+    The robot looks for it with the VLM and measures its position with
+    depth. The LLM never supplies coordinates.
+    """
+
+    type: Literal["object"]
+    value: str = Field(min_length=1, max_length=100)
+
+
+Target = Annotated[
+    Union[
+        NamedLocationTarget,
+        ObjectTarget,
+    ],
+    Field(discriminator="type"),
+]
 
 
 # ---------------------------------------------------------------------------

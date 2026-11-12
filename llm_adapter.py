@@ -53,6 +53,17 @@ class MockLLMBackend(LLMBackend):
                 }
             )
 
+        if text in ("go to the red box", "go to red box"):
+            return json.dumps(
+                {
+                    "action": "navigate",
+                    "target": {
+                        "type": "object",
+                        "value": "red box",
+                    },
+                }
+            )
+
         raise LLMAdapterError(
             f"Mock backend has no response for: {user_text!r}"
         )
@@ -112,6 +123,11 @@ Never return:
 You do not control the robot directly.
 
 Named locations are symbolic names. Never invent coordinates.
+
+When the user refers to a physical object (for example "the red box"),
+use a navigate command whose target type is "object" and whose value is
+the object description, keeping useful details such as color. The robot
+finds the object itself; never say whether the object exists.
 
 Supported command concepts include:
 - navigate

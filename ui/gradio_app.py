@@ -10,9 +10,12 @@ import rclpy
 
 from ai_client.gateway_client import AIGatewayClient
 from ai_client.llm_client import RemoteLLMClient
-from command_pipeline import CommandPipelineError, execute_command
+from ai_client.vlm_client import RemoteVLMClient
+from command_pipeline import CommandPipelineError, execute_command_detailed
 from llm_adapter import LLMCommandAdapter, RemoteLLMBackend
-from ros2_executor import ROS2SkillExecutor
+from perception.object_search import ObjectSearchConfig
+from perception.remote_vlm import RemoteVLMPerception
+from ros2_executor import ExecutorConfig, ROS2SkillExecutor
 from target_resolver import TargetResolver
 
 
@@ -26,6 +29,89 @@ AI_GATEWAY_URL = "http://127.0.0.1:8000"
 
 GRADIO_HOST = "127.0.0.1"
 GRADIO_PORT = 7860
+
+# Objects detected with less confidence than this are not trusted.
+# The robot rotates and looks again; if nothing better is found it
+# reports "not found" and does not move.
+OBJECT_MIN_CONFIDENCE = 0.60
+
+# Rotation between looks (degrees). The simulated camera FOV is 60 deg.
+OBJECT_SEARCH_STEP_DEG = 45.0
+
+
+# ---------------------------------------------------------------------------
+# Status formatting
+# ---------------------------------------------------------------------------
+
+def _format_search(search: dict[str, Any]) -> str:
+    """Render one object-search summary as readable text."""
+
+    lines = [f"Object search: '{search.get('target')}'"]
+
+    lines.append(f"  {search.get('message')}")
+
+    if search.get("found"):
+        position = search.get("object_position_map")
+        goal = search.get("goal_pose")
+
+        if position:
+            lines.append(
+                f"  Object position (map): "
+                f"x={position[0]:.2f}, y={position[1]:.2f}"
+            )
+
+        if goal:
+            lines.append(
+                f"  Navigation goal: x={goal['x']:.2f}, "
+                f"y={goal['y']:.2f}, yaw={goal['yaw']:.2f} rad"
+            )
+
+    views = search.get("views") or []
+
+    if views:
+        lines.append("  Scan log:")
+
+        for view in views:
+            lines.append(
+                f"    view {view['index'] + 1} "
+                f"({view['heading_offset_deg']:+.0f} deg): "
+                f"{view['note']}"
+            )
+
+    return "\n".join(lines)
+
+
+def _format_success(skill_names: list[str], metadata: dict | None) -> str:
+    text = (
+        "✅ Navigation completed successfully.\n\n"
+        f"Executed skills: {skill_names}"
+    )
+
+    searches = (metadata or {}).get("object_searches") or []
+
+    for search in searches:
+        text += "\n\n" + _format_search(search)
+
+    return text
+
+
+def _format_failure(exc: CommandPipelineError) -> str:
+    result = exc.result
+
+    if result is not None and result.error_code == "OBJECT_NOT_FOUND":
+        text = (
+            "🔍 Object not found. The robot did not navigate.\n\n"
+            f"{result.error_message}"
+        )
+
+        searches = (result.metadata or {}).get("object_searches") or []
+
+        for search in searches:
+            text += "\n\n" + _format_search(search)
+
+        return text
+
+    return f"❌ Robot command failed:\n{exc}"
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +146,13 @@ class RobotController:
             backend
         )
 
+        # VLM used to find objects ("go to the red box").
+        perception = RemoteVLMPerception(
+            RemoteVLMClient(
+                gateway
+            )
+        )
+
         # --------------------------------------------------------------
         # ROS 2
         # --------------------------------------------------------------
@@ -71,36 +164,18 @@ class RobotController:
             TEST_LOCATIONS_FILE
         )
 
+        # The executor spins itself on a background thread, so the UI
+        # must NOT call rclpy.spin() on it.
         self.executor = ROS2SkillExecutor(
-            self.resolver
+            self.resolver,
+            ExecutorConfig(
+                object_search=ObjectSearchConfig(
+                    min_confidence=OBJECT_MIN_CONFIDENCE,
+                    rotation_step_deg=OBJECT_SEARCH_STEP_DEG,
+                ),
+            ),
+            perception=perception,
         )
-
-        # --------------------------------------------------------------
-        # ROS 2 spinning
-        # --------------------------------------------------------------
-
-        self._ros_thread = threading.Thread(
-            target=self._spin_ros,
-            daemon=True,
-        )
-
-        self._ros_thread.start()
-
-    # ------------------------------------------------------------------
-    # ROS 2 spin
-    # ------------------------------------------------------------------
-
-    def _spin_ros(self) -> None:
-        """Keep the ROS 2 executor node alive."""
-
-        try:
-            rclpy.spin(
-                self.executor
-            )
-        except Exception as exc:
-            print(
-                f"ROS 2 spin thread stopped: {exc}"
-            )
 
     # ------------------------------------------------------------------
     # Command execution
@@ -130,6 +205,8 @@ class RobotController:
         # Serialize robot commands so that two UI requests cannot
         # simultaneously control the same executor.
         with self._lock:
+            command_json = ""
+
             try:
                 # ------------------------------------------------------
                 # Natural language → validated RobotCommand
@@ -145,10 +222,10 @@ class RobotController:
                 )
 
                 # ------------------------------------------------------
-                # Command → planner → ROS 2 → Nav2
+                # Command → planner → ROS 2 → (VLM) → Nav2
                 # ------------------------------------------------------
 
-                skills = execute_command(
+                skills, result = execute_command_detailed(
                     command,
                     self.executor,
                 )
@@ -158,29 +235,23 @@ class RobotController:
                     for skill in skills
                 ]
 
-                status = (
-                    "✅ Navigation completed successfully.\n\n"
-                    f"Executed skills: {skill_names}"
-                )
-
                 return (
                     command_json,
-                    status,
+                    _format_success(
+                        skill_names,
+                        result.metadata,
+                    ),
                 )
 
             except CommandPipelineError as exc:
                 return (
-                    command_json
-                    if "command_json" in locals()
-                    else "",
-                    f"❌ Robot command failed:\n{exc}",
+                    command_json,
+                    _format_failure(exc),
                 )
 
             except Exception as exc:
                 return (
-                    command_json
-                    if "command_json" in locals()
-                    else "",
+                    command_json,
                     f"❌ Unexpected error:\n{exc}",
                 )
 
@@ -220,7 +291,11 @@ Control the simulated robot using natural-language commands.
 
 **Pipeline**
 
-`Natural Language → Qwen LLM → Structured Command → Task Planner → ROS 2 → Nav2`
+`Natural Language → Qwen LLM → Structured Command → Task Planner → (Qwen-VL object search, rotating if needed) → ROS 2 → Nav2`
+
+Examples: `Go to Executor Test` · `Go to the red box` · `Go to the blue box`
+
+If the object cannot be found with enough confidence, the robot does not move.
 """
         )
 
@@ -231,7 +306,7 @@ Control the simulated robot using natural-language commands.
         command_input = gr.Textbox(
             label="Robot Command",
             placeholder=(
-                "Example: Go to Executor Test"
+                "Example: Go to the red box"
             ),
             lines=2,
         )
@@ -257,7 +332,7 @@ Control the simulated robot using natural-language commands.
 
         status_output = gr.Textbox(
             label="Execution Status",
-            lines=4,
+            lines=12,
             interactive=False,
         )
 

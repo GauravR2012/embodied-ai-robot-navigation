@@ -83,7 +83,7 @@ DEPTH_FRAME = "camera_depth_frame"
 MAP_FRAME = "map"
 BASE_FRAME = "base_link"
 
-TARGET_LABEL = "red box"
+TARGET_LABEL = "green box"
 
 # Distance at which the robot should stop from the object.
 STANDOFF_DISTANCE = 0.8
@@ -91,9 +91,9 @@ STANDOFF_DISTANCE = 0.8
 # Existing local AI gateway.
 #
 # This is the same gateway used by run_camera_remote.py.
-VLM_GATEWAY_URL = "http://127.0.0.1:8000"
+VLM_GATEWAY_URL = "http://127.0.0.1:8080"
 
-VLM_TIMEOUT = 60.0
+VLM_TIMEOUT = 180.0
 
 # Where the RGB frame sent to the VLM is saved.
 FRAME_DIRECTORY = Path("/tmp/embodied_ai_frames")
@@ -115,7 +115,7 @@ You are an object localization system.
 Find the object described below in the image.
 
 Target:
-red box
+green box
 
 Return ONLY valid JSON.
 
@@ -125,7 +125,7 @@ Required format:
   "scene_description": "string",
   "objects": [
     {
-      "label": "red box",
+      "label": "green box or green cube",
       "confidence": 0.0,
       "bbox": {
         "x_min": 0,
@@ -458,6 +458,16 @@ class VLMRGBDNavigationTest(Node):
         self,
         perception_result,
     ):
+        """
+        Find the green target returned by the VLM.
+
+        The Gazebo world may describe the target as either:
+            green box
+            green cube
+
+        Accept the target when its label or attributes identify
+        it as green and its label identifies it as a box or cube.
+        """
 
         target = None
 
@@ -465,49 +475,34 @@ class VLMRGBDNavigationTest(Node):
 
             label = obj.label.lower().strip()
 
+            attributes = {
+                str(k).lower(): str(v).lower()
+                for k, v in obj.attributes.items()
+            }
+
+            has_green = (
+                "green" in label
+                or "green" in attributes.values()
+                or "green" in attributes.keys()
+            )
+
+            has_box_or_cube = (
+                "box" in label
+                or "cube" in label
+            )
+
             if (
-                "red" in label
-                and "box" in label
+                has_green
+                and has_box_or_cube
                 and obj.bbox is not None
             ):
                 target = obj
                 break
 
         if target is None:
-
-            # Fallback:
-            # allow "box" if the model placed the color
-            # inside the attributes.
-
-            for obj in perception_result.objects:
-
-                label = obj.label.lower().strip()
-
-                attributes = {
-                    str(k).lower(): str(v).lower()
-                    for k, v in obj.attributes.items()
-                }
-
-                has_box = "box" in label
-                has_red = (
-                    "red" in label
-                    or "red" in attributes.values()
-                    or "red" in attributes.keys()
-                )
-
-                if (
-                    has_box
-                    and has_red
-                    and obj.bbox is not None
-                ):
-                    target = obj
-                    break
-
-        if target is None:
-
             raise RuntimeError(
                 f"Target '{TARGET_LABEL}' was not detected "
-                "with a valid bounding box.\n"
+                "with a valid bounding box.\\n"
                 f"VLM result: {perception_result}"
             )
 
@@ -516,7 +511,6 @@ class VLMRGBDNavigationTest(Node):
         )
 
         if target.confidence is not None:
-
             self.get_logger().info(
                 f"Target confidence: "
                 f"{target.confidence:.3f}"

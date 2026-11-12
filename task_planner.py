@@ -33,6 +33,32 @@ def plan_command(command: RobotCommand) -> list[Skill]:
     """
 
     if isinstance(command, NavigateCommand):
+        # Physical objects are located with the VLM (rotating in place
+        # if necessary) instead of being looked up in the location file.
+        # If the object is not found, find_object fails and the robot
+        # never receives a navigation goal.
+        if command.target.type == "object":
+            return [
+                Skill(
+                    name="find_object",
+                    parameters={
+                        "target_type": command.target.type,
+                        "target_value": command.target.value,
+                    },
+                ),
+                Skill(
+                    name="navigate_to_target",
+                    parameters={
+                        "target_type": command.target.type,
+                        "target_value": command.target.value,
+                    },
+                ),
+                Skill(
+                    name="wait_for_navigation_result",
+                    parameters={},
+                ),
+            ]
+
         return [
             Skill(
                 name="resolve_target",
